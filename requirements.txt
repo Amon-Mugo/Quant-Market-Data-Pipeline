@@ -1,5 +1,5 @@
-yfinance==0.2.54
 pyyaml==6.0.2
 google-cloud-storage==2.19.0
 google-cloud-bigquery==3.27.0
-curl_cffi==0.7.4
+python-dotenv==1.2.2
+requests==2.34.2

@@ -3,20 +3,22 @@ from ingestion.bq_loader import load_ticker_dates_to_bq
 import pandas as pd
 import argparse
 import logging
+import os
 import time
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
-from curl_cffi import requests
+import requests
 import yaml
-import yfinance as yf
+from dotenv import load_dotenv
 
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-logger = logging.getLogger(__name__) # logging in main is not working
+logger = logging.getLogger(__name__)
 
 DEFAULT_BUCKET = "quant-pipeline-raw"
 BACKFILL_YEARS = 5
@@ -24,6 +26,9 @@ INCREMENTAL_LOOKBACK_DAYS = 5
 TICKER_DELAY_SECONDS = 10
 MAX_RETRIES = 3
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "tickers.yaml"
+
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TWELVE_DATA_URL = "https://api.twelvedata.com/time_series"
 
 
 def load_tickers(config_path: Path = CONFIG_PATH) -> list[dict]:
@@ -40,33 +45,55 @@ def load_tickers(config_path: Path = CONFIG_PATH) -> list[dict]:
         config = yaml.safe_load(f)
     return config["tickers"]
 
-def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict]:
-    
-   # Fetch daily OHLCV rows for a single ticker over a date range.
 
-    
-    session = requests.Session(impersonate="chrome")
-    history = yf.Ticker(symbol, session=session).history(
-        start=start, end=end, interval="1d"
-    )
+def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict]:
+    """
+    Fetch daily OHLCV rows for a single ticker over a date range
+    using the Twelve Data API.
+    """
+    if not TWELVE_DATA_API_KEY:
+        raise RuntimeError("TWELVE_DATA_API_KEY not set. Check your .env file.")
+
+    params = {
+        "symbol": symbol,
+        "interval": "1day",
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "outputsize": 5000,
+        "apikey": TWELVE_DATA_API_KEY,
+    }
+
+    response = requests.get(TWELVE_DATA_URL, params=params, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+
+    if data.get("status") == "error":
+        raise RuntimeError(f"Twelve Data error for {symbol}: {data.get('message')}")
+
+    values = data.get("values", [])
+    if not values:
+        logger.warning(f"No data returned for {symbol} in range {start} to {end}.")
+        return []
 
     rows = []
-    for trading_date, row in history.iterrows():
-        if pd.isna(row["Open"]) or pd.isna(row["Close"]):
+    for entry in values:
+        trading_date = date.fromisoformat(entry["datetime"])
+
+        if pd.isna(entry["open"]) or pd.isna(entry["close"]):
             logger.warning(
-                f"Skipping {symbol} on {trading_date.date()}: incomplete data (NaN)."
+                f"Skipping {symbol} on {trading_date}: incomplete data (NaN)."
             )
             continue
 
         rows.append(
             {
                 "symbol": symbol,
-                "trading_date": trading_date.date(),
-                "open": round(float(row["Open"]), 4),
-                "high": round(float(row["High"]), 4),
-                "low": round(float(row["Low"]), 4),
-                "close": round(float(row["Close"]), 4),
-                "volume": int(row["Volume"]),
+                "trading_date": trading_date,
+                "open": round(float(entry["open"]), 4),
+                "high": round(float(entry["high"]), 4),
+                "low": round(float(entry["low"]), 4),
+                "close": round(float(entry["close"]), 4),
+                "volume": int(entry["volume"]),
             }
         )
     return rows
@@ -75,11 +102,10 @@ def fetch_ohlcv(symbol: str, start: date, end: date) -> list[dict]:
 def fetch_ohlcv_with_retry(
     symbol: str, start: date, end: date, max_retries: int = MAX_RETRIES
 ) -> list[dict]:
-    
-    #Wrapper around fetch_ohlcv that retries with backoff if Yahoo Finance
-   #rate-limits or otherwise fails the request.
-
-    
+    """
+    Wrapper around fetch_ohlcv that retries with backoff if Twelve Data
+    rate-limits or otherwise fails the request.
+    """
     for attempt in range(1, max_retries + 1):
         try:
             return fetch_ohlcv(symbol, start, end)
@@ -97,11 +123,10 @@ def fetch_ohlcv_with_retry(
 
 
 def group_rows_by_date(rows: list[dict]) -> dict[date, list[dict]]:
-    
-    #Group a ticker's OHLCV rows by trading_date, since GCS uploads happen
-    #one file per ticker per day.
-
-  
+    """
+    Group a ticker's OHLCV rows by trading_date, since GCS uploads happen
+    one file per ticker per day.
+    """
     grouped = defaultdict(list)
     for row in rows:
         grouped[row["trading_date"]].append(row)
@@ -109,7 +134,6 @@ def group_rows_by_date(rows: list[dict]) -> dict[date, list[dict]]:
 
 
 def run_ingestion(mode: str, bucket_name: str) -> None:
-    
     tickers = load_tickers()
     today = date.today()
 
@@ -117,7 +141,7 @@ def run_ingestion(mode: str, bucket_name: str) -> None:
         start = today - timedelta(days=365 * BACKFILL_YEARS)
     else:
         start = today - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)
-    end = today + timedelta(days=1)  # yfinance end date is exclusive
+    end = today + timedelta(days=1)  # keep end exclusive-style buffer, consistent with prior behavior
 
     logger.info(
         f"Starting {mode} ingestion for {len(tickers)} tickers, "
@@ -141,9 +165,9 @@ def run_ingestion(mode: str, bucket_name: str) -> None:
             loaded_dates.append(str(trading_date))
 
         if loaded_dates:
-           load_ticker_dates_to_bq(symbol, loaded_dates)
+            load_ticker_dates_to_bq(symbol, loaded_dates)
 
-        time.sleep(TICKER_DELAY_SECONDS)  # be polite to Yahoo's unofficial API
+        time.sleep(TICKER_DELAY_SECONDS)  # respect Twelve Data rate limits
 
     logger.info("Ingestion complete.")
 
