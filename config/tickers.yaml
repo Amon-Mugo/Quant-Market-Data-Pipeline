@@ -1,0 +1,31 @@
+tickers:
+  - symbol: AAPL
+    sector: technology
+  - symbol: MSFT
+    sector: technology
+  - symbol: NVDA
+    sector: technology
+  - symbol: JPM
+    sector: financials
+  - symbol: GS
+    sector: financials
+  - symbol: V
+    sector: financials
+  - symbol: SPY
+    sector: benchmark_etf
+  - symbol: QQQ
+    sector: benchmark_etf
+  - symbol: XOM
+    sector: energy
+  - symbol: CVX
+    sector: energy
+  - symbol: JNJ
+    sector: healthcare
+  - symbol: UNH
+    sector: healthcare
+  - symbol: AMZN
+    sector: consumer_discretionary
+  - symbol: KO
+    sector: consumer_staples
+  - symbol: CAT
+    sector: industrials
