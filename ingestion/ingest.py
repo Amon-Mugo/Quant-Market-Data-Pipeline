@@ -1,4 +1,5 @@
-
+from ingestion.gcs_loader import upload_ndjson
+from ingestion.bq_loader import load_ticker_dates_to_bq
 import pandas as pd
 import argparse
 import logging
@@ -10,13 +11,12 @@ from curl_cffi import requests
 import yaml
 import yfinance as yf
 
-from ingestion.gcs_loader import upload_ndjson
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # logging in main is not working
 
 DEFAULT_BUCKET = "quant-pipeline-raw"
 BACKFILL_YEARS = 5
@@ -135,8 +135,13 @@ def run_ingestion(mode: str, bucket_name: str) -> None:
             row["sector"] = sector
 
         grouped = group_rows_by_date(rows)
+        loaded_dates = []
         for trading_date, day_rows in grouped.items():
             upload_ndjson(bucket_name, symbol, trading_date, day_rows)
+            loaded_dates.append(str(trading_date))
+
+        if loaded_dates:
+           load_ticker_dates_to_bq(symbol, loaded_dates)
 
         time.sleep(TICKER_DELAY_SECONDS)  # be polite to Yahoo's unofficial API
 
