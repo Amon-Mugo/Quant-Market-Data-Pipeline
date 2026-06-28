@@ -1,5 +1,5 @@
-from ingestion.gcs_loader import upload_ndjson
-from ingestion.bq_loader import load_ticker_dates_to_bq
+from ingestion.gcs_loader import upload_ndjson, upload_ticker_batch_ndjson
+from ingestion.bq_loader import load_ticker_dates_to_bq, load_ticker_batch_to_bq
 import pandas as pd
 import argparse
 import logging
@@ -124,8 +124,8 @@ def fetch_ohlcv_with_retry(
 
 def group_rows_by_date(rows: list[dict]) -> dict[date, list[dict]]:
     """
-    Group a ticker's OHLCV rows by trading_date, since GCS uploads happen
-    one file per ticker per day.
+    Group a ticker's OHLCV rows by trading_date, since incremental GCS
+    uploads happen one file per ticker per day.
     """
     grouped = defaultdict(list)
     for row in rows:
@@ -141,7 +141,7 @@ def run_ingestion(mode: str, bucket_name: str) -> None:
         start = today - timedelta(days=365 * BACKFILL_YEARS)
     else:
         start = today - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)
-    end = today + timedelta(days=1)  # keep end exclusive-style buffer, consistent with prior behavior
+    end = today + timedelta(days=1)  # keep end exclusive-style buffer
 
     logger.info(
         f"Starting {mode} ingestion for {len(tickers)} tickers, "
@@ -158,14 +158,20 @@ def run_ingestion(mode: str, bucket_name: str) -> None:
         for row in rows:
             row["sector"] = sector
 
-        grouped = group_rows_by_date(rows)
-        loaded_dates = []
-        for trading_date, day_rows in grouped.items():
-            upload_ndjson(bucket_name, symbol, trading_date, day_rows)
-            loaded_dates.append(str(trading_date))
+        if mode == "backfill":
+            all_dates = [str(row["trading_date"]) for row in rows]
+            upload_ticker_batch_ndjson(bucket_name, symbol, rows)
+            if all_dates:
+                load_ticker_batch_to_bq(symbol, all_dates)
+        else:
+            grouped = group_rows_by_date(rows)
+            loaded_dates = []
+            for trading_date, day_rows in grouped.items():
+                upload_ndjson(bucket_name, symbol, trading_date, day_rows)
+                loaded_dates.append(str(trading_date))
 
-        if loaded_dates:
-            load_ticker_dates_to_bq(symbol, loaded_dates)
+            if loaded_dates:
+                load_ticker_dates_to_bq(symbol, loaded_dates)
 
         time.sleep(TICKER_DELAY_SECONDS)  # respect Twelve Data rate limits
 

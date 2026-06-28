@@ -1,8 +1,4 @@
-
-# Loads NDJSON files from the raw GCS bucket into the BigQuery raw table.
-# Called automatically by ingest.py after a successful GCS upload run,
-# but can also be invoked standalone to (re)load a date range or all data.
-
+# ingestion/bq_loader.py
 import logging
 from google.cloud import bigquery
 
@@ -15,11 +11,10 @@ BUCKET_NAME = "quant-pipeline-raw"
 
 
 def get_existing_dates(ticker: str, dates: list[str]) -> set[str]:
-    
-    #Queries BigQuery to find which of the given dates already have a row
-    #for this ticker, so we can skip re-loading them.
-
-    
+    """
+    Queries BigQuery to find which of the given dates already have a row
+    for this ticker, so we can skip re-loading them.
+    """
     if not dates:
         return set()
 
@@ -43,10 +38,9 @@ def get_existing_dates(ticker: str, dates: list[str]) -> set[str]:
 
 
 def load_gcs_uris_to_bq(gcs_uris: list[str]) -> int:
-    
-    #Loads one or more NDJSON files from GCS into the BigQuery raw table.
-
-    
+    """
+    Loads one or more NDJSON files from GCS into the BigQuery raw table.
+    """
     if not gcs_uris:
         logger.warning("No GCS URIs provided to load_gcs_uris_to_bq; skipping.")
         return 0
@@ -65,7 +59,7 @@ def load_gcs_uris_to_bq(gcs_uris: list[str]) -> int:
         table_ref,
         job_config=job_config,
     )
-    load_job.result()  # Blocks until the load job completes
+    load_job.result()
 
     destination_table = client.get_table(table_ref)
     rows_loaded = load_job.output_rows
@@ -78,25 +72,15 @@ def load_gcs_uris_to_bq(gcs_uris: list[str]) -> int:
 
 def load_ticker_dates_to_bq(ticker: str, dates: list[str]) -> int:
     """
-    Builds GCS URIs for a single ticker across a list of dates and loads
-    them into BigQuery, skipping any dates that are already present for
-    that ticker to avoid duplicate rows.
-
-    Args:
-        ticker: Ticker symbol, e.g. "AAPL"
-        dates: List of date strings in YYYY-MM-DD format
-
-    Returns:
-        Number of rows loaded.
+    Used by incremental mode: loads a ticker's per-day GCS files,
+    skipping any dates already present for that ticker.
     """
     existing_dates = get_existing_dates(ticker, dates)
     new_dates = [d for d in dates if d not in existing_dates]
 
     skipped_count = len(dates) - len(new_dates)
     if skipped_count:
-        logger.info(
-            f"Skipping {skipped_count} already-loaded date(s) for {ticker}."
-        )
+        logger.info(f"Skipping {skipped_count} already-loaded date(s) for {ticker}.")
 
     if not new_dates:
         logger.info(f"No new dates to load for {ticker}.")
@@ -108,15 +92,33 @@ def load_ticker_dates_to_bq(ticker: str, dates: list[str]) -> int:
     return load_gcs_uris_to_bq(gcs_uris)
 
 
-def load_all_raw_data_to_bq() -> int:
+def load_ticker_batch_to_bq(ticker: str, all_dates: list[str]) -> int:
     """
-    Loads all NDJSON files currently in the raw bucket into BigQuery,
-    using a wildcard URI. Useful for a full backfill load or recovery.
-    Does NOT dedupe — only use on an empty or freshly truncated table.
+    Used by backfill mode: a single batched NDJSON file (full_history.json)
+    sits in GCS containing ALL of a ticker's rows for the backfill range.
 
-    Returns:
-        Number of rows loaded.
+    Since BigQuery's load job loads an entire file (not selected rows), this
+    function only checks whether the ticker has ANY existing rows in BigQuery.
+    If it does, the batch load is skipped entirely to avoid duplicates - the
+    assumption is that backfill is a one-time bootstrap per ticker, and any
+    partial/complete existing data should be cleared manually (or via a
+    future `--force` flag) before re-running backfill for that ticker.
     """
+    existing_dates = get_existing_dates(ticker, all_dates)
+
+    if existing_dates:
+        logger.info(
+            f"{ticker} already has {len(existing_dates)} date(s) loaded in BigQuery; "
+            f"skipping batch load to avoid duplicates."
+        )
+        return 0
+
+    logger.info(f"No existing data for {ticker}; loading full batch file.")
+    gcs_uri = f"gs://{BUCKET_NAME}/ticker={ticker}/full_history.json"
+    return load_gcs_uris_to_bq([gcs_uri])
+
+
+def load_all_raw_data_to_bq() -> int:
     wildcard_uri = f"gs://{BUCKET_NAME}/ticker=*/dt=*.json"
     return load_gcs_uris_to_bq([wildcard_uri])
 
