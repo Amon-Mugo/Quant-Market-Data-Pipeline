@@ -3,8 +3,8 @@ google-cloud-storage==2.19.0
 google-cloud-bigquery==3.27.0
 python-dotenv==1.2.2
 requests==2.34.2
-dbt-core==1.9.4
-dbt-bigquery==1.9.1
+dbt-core==1.11.11
+dbt-bigquery==1.11.1
 pandas==2.2.3
 db-dtypes==1.4.1
 pyarrow==18.1.0
