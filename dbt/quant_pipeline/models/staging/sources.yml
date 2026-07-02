@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: quant_pipeline_raw
+    database: gcp-de-learning-498109
+    schema: quant_pipeline_raw
+    description: "Raw OHLCV market data loaded from GCS NDJSON via Twelve Data API"
+    tables:
+      - name: ohlcv_raw
+        description: "Daily OHLCV bars per ticker, partitioned by trading_date, clustered on symbol+sector. Append-only; may contain duplicate rows for a given (symbol, trading_date)."
+        columns:
+          - name: symbol
+            description: "Ticker symbol, e.g. AAPL"
+          - name: trading_date
+            description: "Trading date for the bar"
+          - name: open
+            description: "Opening price"
+          - name: high
+            description: "Intraday high price"
+          - name: low
+            description: "Intraday low price"
+          - name: close
+            description: "Closing price"
+          - name: volume
+            description: "Shares traded"
+          - name: sector
+            description: "Sector classification, denormalized from config/tickers.yaml"

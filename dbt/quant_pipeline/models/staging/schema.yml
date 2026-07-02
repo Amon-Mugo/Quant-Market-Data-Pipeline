@@ -1,0 +1,19 @@
+version : 2
+
+models:
+  - name: stg_ohlcv
+    description: "Deduplicated OHLCV staging layer, one row per (symbol, trading_date)."
+    columns:
+      - name: ohlcv_id
+        description: "Surrogate key for the row."
+        tests:
+          - unique
+          - not_null  
+      - name: symbol
+        description: "Ticker symbol."
+        tests:
+          - not_null
+      - name: trading_date
+        description: "Date of the trading day."
+        tests:
+          - not_null

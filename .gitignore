@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.venv/
 
 # Terraform
 .terraform/
@@ -23,3 +24,8 @@ override.tf.json
 backfill_log.txt
 airflow/secrets/
 airflow/logs/
+
+
+dbt/quant_pipeline/target/
+dbt/quant_pipeline/profiles.yml
+dbt/quant_pipeline/.user.yml
