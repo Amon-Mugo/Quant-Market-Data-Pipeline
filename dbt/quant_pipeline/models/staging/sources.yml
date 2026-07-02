@@ -25,3 +25,16 @@ sources:
             description: "Shares traded"
           - name: sector
             description: "Sector classification, denormalized from config/tickers.yaml"
+      - name: int_ema_rsi_python
+        description: "EMA-20, EMA-50, and RSI-14 computed via pandas (WITH RECURSIVE hit BigQuery's 500-iteration cap). Written by transform/compute_ema_rsi.py with WRITE_TRUNCATE, one row per symbol + trading_date."
+        columns:
+          - name: symbol
+            description: "Ticker symbol"
+          - name: trading_date
+            description: "Trading date"
+          - name: ema_20
+            description: "20-day exponential moving average of close price"
+          - name: ema_50
+            description: "50-day exponential moving average of close price"
+          - name: rsi_14
+            description: "14-day relative strength index (Wilder smoothing)"

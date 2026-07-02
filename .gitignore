@@ -29,3 +29,4 @@ airflow/logs/
 dbt/quant_pipeline/target/
 dbt/quant_pipeline/profiles.yml
 dbt/quant_pipeline/.user.yml
+dbt/quant_pipeline/dbt_packages/

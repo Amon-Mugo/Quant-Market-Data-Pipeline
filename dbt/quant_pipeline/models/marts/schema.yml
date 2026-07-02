@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: fct_ohlcv_indicators
+    description: "Final fact table combining OHLCV price data, daily/log returns, SMA, rolling volatility, EMA, and RSI indicators. One row per symbol per trading_date."
+    columns:
+      - name: symbol
+        description: "Ticker symbol"
+        data_tests:
+          - not_null
+
+      - name: trading_date
+        description: "Trading date for the bar"
+        data_tests:
+          - not_null
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+            - symbol
+            - trading_date

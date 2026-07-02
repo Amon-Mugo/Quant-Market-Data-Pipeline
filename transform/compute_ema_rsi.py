@@ -13,7 +13,7 @@ DESTINATION_TABLE_ID = "int_ema_rsi_python"
 
 EMA_SHORT_WINDOW = 20
 EMA_LONG_WINDOW = 50
-RSI_WINDOW = 14
+RSI_WINDOW = 14 
 
 
 def fetch_ohlcv_returns() -> pd.DataFrame:
